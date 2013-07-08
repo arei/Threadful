@@ -1,0 +1,776 @@
+(function(){
+	var isBrowser = (typeof window !== "undefined" || typeof self !== "undefined");
+	var isNode = (typeof process !== "undefined");	
+	var isMaster = (isBrowser && typeof window !== "undefined") || (isNode && process !== "undefined" && process.env._IS_NODE_SLAVE_PROCESS!=="true");
+	var isSlave = (isBrowser && typeof window === "undefined") || (isNode && process !== "undefined" && process.env._IS_NODE_SLAVE_PROCESS==="true");
+	
+	if (!isBrowser && !isNode) throw new Error("Unable to understand execution context, neither Browser nor Node.");
+
+	var oneup = 1;
+
+	var getId = function() {
+		return new Date().getTime()+"."+(oneup++);
+	};
+	
+	var toArray = function(a) {
+		return Array.prototype.slice.call(a);
+	};
+
+	var keys = function(o) {
+		if (Object.keys) return Object.keys(o);
+
+		var keys = [];
+		for (var key in o) keys.push(key);
+		return keys;
+	};
+
+	var extend = function(src,dest) {
+		each(keys(src),function(key){
+			if (dest[key]===undefined) dest[key] = src[key];
+		});
+		return dest;
+	};
+
+	var each = function(a,f) {
+		if (Array.prototype.forEach) a.forEach(f);
+		else if (Array.prototype.each) a.each(f);
+		else for (var i=0;i<a.length;i++) f(a[i],i);
+		return a;
+	};
+
+	var isFunction = function(f) {
+		return typeof f === "function";
+	};
+
+	var sanatizeArguments = function(a) {
+		a = toArray(a);
+		each(a,function(v,i){
+			if (isFunction(v)) v = v.toString();
+			if (v.toString()==="[object Arguments]") v = toArray(v);
+			if (typeof self !=="undefined" && v===self) v = "[object Self]";
+			a[i] = v;
+		});
+		return a;
+	};
+
+	var functionToString = function(f) {
+		var s = f.toString();
+		s = s.replace(/\/\/(.*)[\n\r\v\f]/g,"/* $1 */");
+		s = s.replace(/[\n\r\v\f]/g," ");
+		s = s.replace(/\s\s|\t/g," ");
+		return s;
+	};
+
+	var stringToFunction = function(s) {
+		try {
+			var f = eval("("+s+")");
+			return f;
+		}
+		catch (ex) {
+			throw wrapError(ex,"Compilation Error");
+		}
+	};
+
+	var wrapError = function(ex,msg) {
+		var s = "";
+		if (ex.name) s += (msg?": ":"")+ex.name;
+		if (ex.message) s += (msg?": ":"")+ex.message;
+		if (ex.fileName) s += (msg?": ":"")+ex.fileName;
+		if (ex.lineNumber) s += (msg?": ":"")+ex.lineNumber;
+		if (!s) s = ex.toString();
+		s = msg +": "+s;
+
+		return s;
+	};
+
+	var traverse = function(o,s) {
+		var p = s.split(/\./);
+		if (p.length<2) return o;
+		var f = p.shift();
+		var r = p.join(".");
+		if (o[f]===undefined || o[f]===null) o[f] = {};
+		return traverse(o[f],r);
+	};
+
+	// Setup Slave
+	var SlaveCode = function() {
+		var totalStart = new Date().getTime();
+
+		var installed = {};
+		var stats = {
+			successfulResult: 0,
+			unsuccessfulResults: 0,
+			totalTime: 0,
+			activeTime: 0,
+			averageTime: 0,
+			lastTime: 0,
+			lastCall: null,
+			selfies: 0,
+			executes: 0,
+			installs: 0,
+			uninstalls: 0,
+		};
+
+		var send = null;
+		var listen = null;
+		var unlisten = null;
+		var close = null;
+		var payload = null;
+
+		// What is the top level for this, global for node or self for browsers.
+		var top = isNode ? global : self;
+
+		if (isBrowser) {
+			send = function(payload) {
+				return top.postMessage(payload);
+			};
+			listen = function(event,listener) {
+				return top.addEventListener(event,listener);
+			};
+			unlisten = function(event,listener) {
+				return top.removeEventListener(event,listener);
+			};
+			close = function() {
+				top.close();
+			};
+			payload = function(event) {
+				return event.data;
+			};
+		}
+		else if (isNode) {
+			send = function(payload) {
+				return process.send(payload);
+			};
+			listen = function(event,listener) {
+				return process.on(event,listener);
+			};
+			unlisten = function(event,listener) {
+				return process.removeListener(event,listener);
+			};
+			close = function() {
+				process.exit();
+			};
+			payload = function(event) {
+				return event;
+			};
+		}
+
+		var respondError = function(id,error) {
+			stats.unsuccessfulResults += 1;
+			send({
+				id: id,
+				error: error instanceof Error ? wrapError(error,"Uknown Error") : error,
+				result: null
+			});
+			throw error;
+		};
+
+		var respondResult = function(id,result) {
+			stats.successfulResult += 1;
+			send({
+				id: id,
+				error: null,
+				result: result
+			});
+		};
+
+		var cmdSelfie = function(id,options) {
+			var name = options.name;
+			if (!name) return respondError(id,new Error("Selfie requires a name option."));
+
+			var last = name.split(/\./).slice(-1)[0];
+			if (!last) return respondError(id,new Error("Selfie did not understand the name option: "+name));
+
+			var f = function() {
+				var a = sanatizeArguments(arguments);
+				send({
+					id: "selfie",
+					command: name,
+					arguments: a
+				});
+				stats.selfies += 1;
+			};
+
+			var obj = traverse(top,name);
+
+			// if (obj[last]) return respondError(id,new Error("Selfie already defined for name option: "+name));
+
+			obj[last] = f;
+
+			respondResult(id,true);
+		};
+
+		var cmdUnselfie = function(id,options) {
+			var name = options.name;
+			if (!name) return respondError(new Error("Unselfie requires a name option."));
+
+			var last = name.split(/\./).slice(-1)[0];
+			if (!last) return respondError(new Error("Unselfie did not understand the name option: "+name));
+
+			var obj = traverse(top,name);
+
+			delete obj[last];
+
+			respondResult(id,true);
+		};
+
+		var cmdInstall = function(id,options) {
+			var name = options.name;
+			if (!name) return respondError(id,new Error("Install requires a name option."));
+
+			var code = options.code;
+			if (!code) return respondError(id,new Error("Install requires a code option."));
+
+			var f = stringToFunction(code);
+
+			if (installed[name]) return respondError(id,new Error("Install already defined for name option: "+name));
+
+			installed[name] = f;
+
+			respondResult(id,true);
+
+			stats.installs += 1;
+		};
+
+		var cmdUninstall = function(id,options) {
+			var name = options.name;
+			if (!name) return respondError(new Error("Uninstall requires a name option."));
+
+			delete installed[name];
+
+			respondResult(id,true);
+
+			stats.uninstalls += 1;
+		};
+
+		var cmdExecute = function(id,options) {
+			var start = new Date().getTime();
+
+			var name = options.name;
+			if (!name) return respondError(id,new Error("Execute requires a name option."));
+
+			var args = options.arguments;
+			if (!args) return respondError(id,new Error("Execute requires an arguments option."));
+
+			var exec = installed[name]
+			if (!exec) return respondError(id,new Error("Execute did not find any installed code for name option: "+name));
+
+			try {
+				var result = exec.apply(this,args);
+				respondResult(id,result);
+			}
+			catch (ex) {
+				respondError(id,wrapError(ex,"Execution Error"));
+			}
+
+			var time = new Date().getTime()-start;
+			stats.executes += 1;
+			stats.lastTime = time;
+			stats.lastCall = name;
+		};
+
+		var cmdStatus = function(id,options) {
+			stats.totalTime = new Date().getTime()-totalStart;
+			respondResult(id,stats);
+		};
+
+		var cmdClose = function(id,options) {
+			close();
+			respondResult(id,true);
+		};
+
+		var commands = {
+			selfie: cmdSelfie,
+			unselfie: cmdUnselfie,
+			install: cmdInstall,
+			uninstall: cmdUninstall,
+			execute: cmdExecute,
+			status: cmdStatus,
+			close: cmdClose
+		};
+
+		listen("message",function(event){
+			var data = payload(event);
+			var id = data.id;
+			if (!id) throw new Error("Worker message requires an id.");
+
+			var cmd = data.command || "";
+			if (!cmd) throw new Error("Worker message requires a command.");
+
+			var opt = data.options || {};
+
+			var count = 0;
+
+			var fun = commands[cmd];
+			if (fun) {
+				try {
+					var start = new Date().getTime();
+					fun(id,opt);
+					stats.activeTime += new Date().getTime()-start;
+					stats.averageTime = stats.activeTime/(++count);
+				}
+				catch (ex) {
+					throw ex;
+				}
+			}
+			else {
+				throw new Error("Worker did not understand command: "+cmd);
+			}
+		});
+	};
+
+	// setup Master
+	var MasterCode = function() {
+
+		var pools = [];
+		var callbacks = {};
+		var selfies = {};
+
+		var create = null;
+		var send = null;
+		var listen = null;
+		var unlisten = null;
+		var payload = null;
+
+		if (isBrowser) {
+			create = function(uri) {
+				return new Worker(uri);
+			};
+			send = function(worker,payload) {
+				return worker.postMessage(payload);
+			};
+			listen = function(worker,event,listener) {
+				return worker.addEventListener(event,listener);
+			};
+			unlisten = function(worker,event,listener) {
+				return worker.removeEventListener(event,listener);
+			};
+			payload = function(event) {
+				return event.data;
+			};
+		}
+		else if (isNode) {
+			create = function(uri) {
+				var fork = require("child_process").fork;
+				var env = JSON.parse(JSON.stringify(process.env));
+				env._IS_NODE_SLAVE_PROCESS = "true";
+				return fork(uri,{
+					env: env
+				});
+			};
+			send = function(worker,payload) {
+				return worker.send(payload);
+			};
+			listen = function(worker,event,listener) {
+				return worker.on(event,listener);
+			};
+			unlisten = function(worker,event,listener) {
+				return worker.removeListener(event,listener);
+			};
+			payload = function(event) {
+				return event;
+			};
+		}
+
+		var registerCallback = function(id,callback) {
+			if (callback && isFunction(callback)) callbacks[id] = callback;
+		};
+
+		var executeCallback = function(id,error,result) {
+			var cb = callbacks[id];
+			callbacks[id] = null;
+			if (cb) cb(error,result);
+		};
+
+		var registerSelfie = function(name,f) {
+			selfies[name] = f;
+		};
+
+		var executeSelfie = function(name,args) {
+			var f = selfies[name];
+			if (f) f.apply(this,args);
+		};
+
+		var Selfie = function(worker,name,callback) {
+			var id = getId();
+			registerCallback(id,callback);
+			send(worker,{
+				id: id,
+				command: "selfie",
+				options: {
+					name: name
+				}
+			});
+		};
+
+		var Unselfie = function(worker,name,callback) {
+			var id = getId();
+			registerCallback(id,callback);
+
+			send(worker,{
+				id: id,
+				command: "unselfie",
+				options: {
+					name: name
+				}
+			});
+		};
+
+		var Install = function(worker,name,functn,callback) {
+			var id = getId();
+			registerCallback(id,callback);
+			send(worker,{
+				id: id,
+				command: "install",
+				options: {
+					name: name,
+					code: functionToString(functn)
+				}
+			});
+		};
+
+		var Uninstall = function(worker,name,callback) {
+			var id = getId();
+			registerCallback(id,callback);
+			send(worker,{
+				id: id,
+				command: "uninstall",
+				options: {
+					name: name
+				}
+			});
+		};
+
+		var Execute = function(worker,name,args,callback) {
+			var id = getId();
+			registerCallback(id,callback);
+			send(worker,{
+				id: id,
+				command: "execute",
+				options: {
+					name: name,
+					arguments: args
+				}
+			});
+		};
+
+		var Status = function(worker,callback) {
+			var id = getId();
+			registerCallback(id,callback);
+			send(worker,{
+				id: id,
+				command: "status"
+			});
+		};
+
+		var Close = function(worker,callback) {
+			var id = getId();
+			registerCallback(id,callback);
+			send(worker,{
+				id: id,
+				command: "close"
+			});
+		};
+
+		registerSelfie("console.log",function(){
+			var a = toArray(arguments);
+			a.unshift("[ThreadSafe.js]");
+			console.log.apply(console,a);
+		});		
+
+		registerSelfie("console.info",function(){
+			var a = toArray(arguments);
+			a.unshift("[ThreadSafe.js]");
+			console.info.apply(console,a);
+		});		
+
+		registerSelfie("console.warn",function(){
+			var a = toArray(arguments);
+			a.unshift("[ThreadSafe.js]");
+			console.warn.apply(console,a);
+		});		
+
+		registerSelfie("console.error",function(){
+			var a = toArray(arguments);
+			a.unshift("[ThreadSafe.js]");
+			console.error.apply(console,a);
+		});		
+
+		var Thread = function(options) {
+			return new ThreadPool({
+				threads: 1
+			});
+		};
+
+		var ThreadPool = function(options) {
+			var me = this;
+
+			pools.push(this);
+
+			var options = extend({
+				threads: 1,
+				timeout: 500,
+				slaveURI: "ThreadSafe.js"
+			},options);
+
+			var workers = [];
+			var installed = {};
+			var last = 0;
+
+			var addThread = function() {
+				var worker = create(options.slaveURI);
+	
+				listen(worker,"message",function(event){
+					var data = payload(event);
+					var id = data.id;
+
+					if (id==="selfie") {
+						var command = data.command || "";
+						var args = data.arguments || [];
+						executeSelfie(command,args);
+					}
+					else {
+						var error = data.error || null;
+						var result = data.result || null;
+						executeCallback(id,error,result);
+					}
+				});
+	
+				each(keys(selfies),function(key,i){
+					Selfie(worker,key);
+				});
+
+				workers.push(worker);				
+			};
+
+			var removeThread = function() {
+				var worker = workers.pop();
+				if (!worker) return;
+
+				Close(worker);
+			};
+
+			for (var i=0;i<options.threads;i++) addThread();
+
+			this.increaseThreadPoolSizeBy = function(x) {
+				x = x|0 || 1;
+				if (x<1) return;
+				for (var i=0;i<x;i++) addThread();
+				options.threads += x;
+			};
+
+			this.decreaseThreadPoolSizeBy = function(x) {
+				x = x|0 || 1;
+				if (x<1) return;
+				for (var i=0;i<x;i++) removeThread();
+				options.threads += x;
+			};
+
+			this.getThreadPoolSize = function() {
+				return options.threads;
+			};
+
+			this.install = function(name,functn,callback) {
+				installed[name] = functn;
+
+				var done = [];
+				each(workers,function(w,i){
+					var start = new Date().getTime();
+					Install(w,name,functn,function(){
+						done[i] = true;
+						var alldone = true;
+						each(workers,function(w,j){
+							if (!alldone) return;
+							if (done[j]!==true) alldone = false;
+						});
+						if (callback && alldone) callback(null,true);
+						else if (callback && options.timeout>-1 && start-new Date().getTime()>options.timeout) callback("Install timed out.",false);
+					});				
+				});
+				return me;
+			};
+
+			this.uninstall = function(name,callback) {
+				delete installed[name];
+
+				var done = [];
+				each(workers,function(w,i){
+					var start = new Date().getTime();
+					Uninstall(w,name,function(){
+						done[i] = true;
+						var alldone = true;
+						each(workers,function(w,j){
+							if (!alldone) return;
+							if (done[j]!==true) alldone = false;
+						});
+						if (callback && alldone) callback(null,true);
+						else if (callback && options.timeout>-1 && start-new Date().getTime()>options.timeout) callback("Uninstall timed out.",false);
+					});				
+				});
+				return me;
+			};			
+
+			this.list = function(callback) {
+				callback(null,keys(installed));
+				return me;
+			};
+
+			this.execute = function(name,arg,arg,etc,callback) {
+				if (!installed[name]) throw new Error("Nothing installed as '"+name+"' in ThreadPool.");
+
+				var a = toArray(arguments);
+				a.shift();
+
+				var callback = a.pop();
+				if (callback && !isFunction(callback)) {
+					a.push(callback);
+					callback = null;
+				}
+
+				if (++last>=workers.length) last = 0;
+
+				var worker = workers[last];
+				if (!worker) throw new Error("Unable to obtain thread.");
+
+				Execute(worker,name,a,callback);				
+
+				return me;
+			};
+
+			this.status = function(callback) {
+				var answers = [];
+				each(workers,function(w,i){
+					var start = new Date().getTime();
+					Status(w,function(error,result){
+						answers[i] = result;
+						var alldone = true;
+						each(workers,function(w,j){
+							if (!alldone) return;
+							if (answers[j]===undefined) alldone = false;
+						});
+						if (callback && alldone) {
+							var stats = {
+								poolSize: options.threads,
+								options: options,
+								installed: installed,
+								threads: {}
+							};
+							each(answers,function(answer,i){
+								stats.threads[i] = answer;
+							});
+							callback(null,stats);
+						}
+						else if (callback && options.timeout>-1 && start-new Date().getTime()>options.timeout) callback("Close timed out.",null);
+					});				
+				});
+			};
+
+			this.close = function(callback) {
+				var done = [];
+				each(workers,function(w,i){
+					var start = new Date().getTime();
+					Close(w,function(){
+						done[i] = true;
+						var alldone = true;
+						each(workers,function(w,j){
+							if (!alldone) return;
+							if (done[j]!==true) alldone = false;
+						});
+						if (callback && alldone) callback(null,true);
+						else if (callback && options.timeout>-1 && start-new Date().getTime()>options.timeout) callback("Close timed out.",false);
+					});				
+				});
+				return me;
+			};
+
+			this.threadify = function(f) {
+				var id = getId();
+				var ready = false;
+
+				me.install(id,f,function(){
+					ready = true;
+				});
+
+				var g = function(arg,arg,etc,callback) {
+					var t = this;
+					var a = toArray(arguments);
+
+					if (!ready) {
+						setTimeout(function(){
+							g.apply(t,a);
+						},0);
+						return;
+					}
+
+					a.unshift(id);
+
+					return me.execute.apply(me,a);
+				};
+				return g;
+			};
+
+			return this;
+		};
+
+		var CloseAll = function() {
+			each(pools,function(pool){
+				pool.close();
+			});
+			pools = [];
+		};
+
+		var SoloThreadify = function(f) {
+			var w = new Thread();
+			return w.threadify(f);
+		};
+
+		var SoloExecute = function(f,arg,arg,etc,callback) {
+			var a = toArray(arguments);
+			var f = a.shift();
+
+			var callback = a.pop();
+			if (callback && !isFunction(callback)) {
+				a.push(callback);
+				callback = null;
+			}
+
+			var name = getId();
+
+			var w = new Thread();
+			w.install(name,f,function(error,result){
+				if (error && callback) callback(error,null);
+				else if (!error) {
+					a.push(callback);
+					a.unshift(name);
+					w.execute.apply(w,a);
+					w.uninstall(name);
+				}
+			});
+		};
+
+		var ThreadSafe = {
+			Thread: Thread,
+			ThreadPool: ThreadPool,
+			Worker: Thread,
+			WorkerPool: ThreadPool,
+			Threadify: SoloThreadify,
+			Execute: SoloExecute,
+			CloseAll: CloseAll
+		};
+
+		if (isNode) {
+			module.exports = ThreadSafe;
+		}
+		else if (isBrowser) {
+			window.ThreadSafe = ThreadSafe;
+		}
+
+		return ThreadSafe;
+	};
+
+	// Depending on which runtime execution we are in, launch the appropriate setup.
+	if (isSlave) SlaveCode();
+	else if (isNode || isBrowser) MasterCode();
+	else throw new Error("ThreadSafe.js is unable to determine what kind of runtime in which it is executing.");
+})();
+

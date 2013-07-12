@@ -6,6 +6,9 @@
 	
 	if (!isBrowser && !isNode) throw new Error("Unable to understand execution context, neither Browser nor Node.");
 
+	var threadfulName = "Threadful.js";
+	var threadfulPath = threadfulName;
+	
 	var oneup = 1;
 
 	var getId = function() {
@@ -54,6 +57,7 @@
 	};
 
 	var functionToString = function(f) {
+		if (!f || !isFunction(f)) throw new Error("Not a Function.");
 		var s = f.toString();
 		s = s.replace(/\/\/(.*)[\n\r\v\f]/g,"/* $1 */");
 		s = s.replace(/[\n\r\v\f]/g," ");
@@ -90,6 +94,37 @@
 		var r = p.join(".");
 		if (o[f]===undefined || o[f]===null) o[f] = {};
 		return traverse(o[f],r);
+	};
+
+	var timing = function(name,f) {
+		if (name && !f && isFunction(name)) {
+			f = name
+			name = "Anonymous Function";
+		}
+		if (!name) throw new Error("Timing should supply a name.");
+		if (!f || !isFunction(f)) throw new Error("Timing require a function.");
+
+		var total = 0;
+		var count = 0;
+		
+		var g = function() {
+			count += 1;
+			var start = new Date().getTime();
+			var result,error;
+			try {
+				result = f.apply(this,toArray(arguments));				
+			}
+			catch (ex) {
+				error = ex;
+			};
+			var time = new Date().getTime()-start;
+			total += time;
+			console.log(name+": "+time+" ms. (Total: "+total+" ms. / Count: "+count+" / Average: "+(((total/count*10000)|0)/10000)+" ms.)");
+			if (error) throw error;
+			return result;
+		};
+
+		return g;
 	};
 
 	// Setup Slave
@@ -333,8 +368,19 @@
 		var payload = null;
 
 		if (isBrowser) {
-			create = function(uri) {
-				return new Worker(uri);
+			var scripts = document.getElementsByTagName("script");
+			var nametest = new RegExp(threadfulName+"$");
+			for (var i=0;i<scripts.length;i++) {
+				var src = scripts[i].src;
+				if (nametest.test(src)) {
+					var pathre = new RegExp("^(.*)\/"+threadfulName+"$");
+					var path = src.replace(pathre,"$1");
+					threadfulPath = path+"/"+threadfulName;
+				}
+			}
+
+			create = function() {
+				return new Worker(threadfulPath);
 			};
 			send = function(worker,payload) {
 				return worker.postMessage(payload);
@@ -350,11 +396,15 @@
 			};
 		}
 		else if (isNode) {
-			create = function(uri) {
+			threadfulPath = require.resolve("./"+threadfulName);
+
+			create = function() {
 				var fork = require("child_process").fork;
+				
 				var env = JSON.parse(JSON.stringify(process.env));
 				env._IS_NODE_SLAVE_PROCESS = "true";
-				return fork(uri,{
+				
+				return fork(threadfulPath,{
 					env: env
 				});
 			};
@@ -474,25 +524,25 @@
 
 		registerSelfie("console.log",function(){
 			var a = toArray(arguments);
-			a.unshift("[ThreadSafe.js]");
+			a.unshift("["+threadfulName+"]");
 			console.log.apply(console,a);
 		});		
 
 		registerSelfie("console.info",function(){
 			var a = toArray(arguments);
-			a.unshift("[ThreadSafe.js]");
+			a.unshift("["+threadfulName+"]");
 			console.info.apply(console,a);
 		});		
 
 		registerSelfie("console.warn",function(){
 			var a = toArray(arguments);
-			a.unshift("[ThreadSafe.js]");
+			a.unshift("["+threadfulName+"]");
 			console.warn.apply(console,a);
 		});		
 
 		registerSelfie("console.error",function(){
 			var a = toArray(arguments);
-			a.unshift("[ThreadSafe.js]");
+			a.unshift("["+threadfulName+"]");
 			console.error.apply(console,a);
 		});		
 
@@ -510,7 +560,6 @@
 			var options = extend({
 				threads: 1,
 				timeout: 500,
-				slaveURI: "ThreadSafe.js"
 			},options);
 
 			var workers = [];
@@ -518,7 +567,7 @@
 			var last = 0;
 
 			var addThread = function() {
-				var worker = create(options.slaveURI);
+				var worker = create();
 	
 				listen(worker,"message",function(event){
 					var data = payload(event);
@@ -748,7 +797,7 @@
 			});
 		};
 
-		var ThreadSafe = {
+		var Threadful = {
 			Thread: Thread,
 			ThreadPool: ThreadPool,
 			Worker: Thread,
@@ -759,18 +808,18 @@
 		};
 
 		if (isNode) {
-			module.exports = ThreadSafe;
+			module.exports = Threadful;
 		}
 		else if (isBrowser) {
-			window.ThreadSafe = ThreadSafe;
+			window.Threadful = Threadful;
 		}
 
-		return ThreadSafe;
+		return Threadful;
 	};
 
 	// Depending on which runtime execution we are in, launch the appropriate setup.
 	if (isSlave) SlaveCode();
 	else if (isNode || isBrowser) MasterCode();
-	else throw new Error("ThreadSafe.js is unable to determine what kind of runtime in which it is executing.");
+	else throw new Error("Threadful is unable to determine what kind of runtime in which it is executing.");
 })();
 

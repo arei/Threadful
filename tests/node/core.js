@@ -1,17 +1,17 @@
-var ThreadSafe = require("./ThreadSafe");
+var Threadful = require("./../../Threadful.js");
 
-if (!ThreadSafe) {
-	console.log("ThreadSafe.js Found Test: FAILED.");
+if (!Threadful) {
+	console.log("Threadful.js Found Test: FAILED.");
 	return;
 }
-console.log("ThreadSafe.js Found Test: Passed");
+console.log("Threadful.js Found Test: Passed");
 
-var w = new ThreadSafe.Thread();
+var w = new Threadful.Thread();
 if (!w) {
-	console.log("ThreadSafe.Thread Test: FAILED");
+	console.log("Threadful.Thread Test: FAILED");
 	return;
 }
-console.log("ThreadSafe.Thread Test: Passed");
+console.log("Threadful.Thread Test: Passed");
 
 w.install("test1",function(a,b,c){
 	return a+b+c;
@@ -79,7 +79,7 @@ w.status(function(error,result){
 
 w.uninstall("test1");
 
-var threadtest2 = ThreadSafe.Threadify(function(a,b,c){
+var threadtest2 = Threadful.Threadify(function(a,b,c){
 	return a+b+c;
 });
 
@@ -88,7 +88,7 @@ threadtest2("quick","brown","fox",function(error,result){
 	else console.log("Threadify Test 3: FAILED");
 });
 
-var executetest1 = ThreadSafe.Execute(function(a,b,c){
+var executetest1 = Threadful.Execute(function(a,b,c){
 	return a-b-c;
 },1,2,3,function(error,result){
 	if (!error && result===-4) console.log("Execute Test 4: Passed: ",result);				
@@ -96,5 +96,5 @@ var executetest1 = ThreadSafe.Execute(function(a,b,c){
 });
 
 setTimeout(function(){
-	ThreadSafe.CloseAll();
+	Threadful.CloseAll();
 },1000);

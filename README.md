@@ -63,19 +63,8 @@ Callbacks
 
 Threadful uses callbacks to notify when things are complete.  All callbacks have the form `callback(error,result)`.  If error is not null, some error occured during execution.  Otherwise a valid result will be populated, if any was sent back.
 
-Usage: `Threadful`
-------------------
-
-#### `Threadful.Thread`
-
-You can create a single Thread using the `new Threadful.Thread()` constructor..  Note that creating a single thread is really jsut a wrapper for creating a thread pool with 1 thread and a timeout of500ms.
-
-Threadful.Thread returns a new ThreadPool object.  See below for details.
-
-```javascript
-// Create a new Thread
-var thread = new Threadful.Thread();
-```
+`Threadful`
+-----------
 
 #### `Threadful.ThreadPool`
 
@@ -89,6 +78,17 @@ var threadpool = new Threadful.ThreadPool({
   timeout: 500
 });
 ````
+
+#### `Threadful.Thread`
+
+You can create a single Thread using the `new Threadful.Thread()` constructor..  Note that creating a single thread is really jsut a wrapper for creating a thread pool with 1 thread and a timeout of500ms.
+
+Threadful.Thread returns a new ThreadPool object.  See below for details.
+
+```javascript
+// Create a new Thread
+var thread = new Threadful.Thread();
+```
 
 #### `Threadful.Threadify`
 
@@ -142,8 +142,8 @@ Closes all previously created ThreadPool objects including those created by Thre
 Threadful.CloseAll();
 ```
 
-Usage: `ThreadPool`
------------------
+`ThreadPool`
+------------
 
 #### `ThreadPool.install(name,f,callback)`
 

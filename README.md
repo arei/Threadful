@@ -1,6 +1,5 @@
 Threadful
 =========
-
 Common "Thread" behavior for Browsers (using Web Workers) or Node (using Child Process).
 
 Description

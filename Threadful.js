@@ -228,9 +228,7 @@
 
 			var obj = traverse(top,name);
 
-			// if (obj[last]) return respondError(id,new Error("Selfie already defined for name option: "+name));
-
-			obj[last] = f;
+			if (!obj[last]) obj[last] = f;
 
 			respondResult(id,true);
 		};

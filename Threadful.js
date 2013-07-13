@@ -41,6 +41,14 @@
 		return a;
 	};
 
+	var indexOf = function(a,x) {
+		if (Array.prototype.indexOf) return a.indexOf(x);
+		for (var i=0;i<a.length;i++) {
+			if (a[i]===x) return i;
+		}
+		return -1;
+	};
+
 	var isFunction = function(f) {
 		return typeof f === "function";
 	};
@@ -420,14 +428,17 @@
 			};
 		}
 
-		var registerCallback = function(id,callback) {
-			if (callback && isFunction(callback)) callbacks[id] = callback;
+		var registerCallback = function(id,worker,callback) {
+			callbacks[id] = {
+				callback: isFunction(callback) ? callback : null,
+				worker: worker
+			};
 		};
 
 		var executeCallback = function(id,error,result) {
 			var cb = callbacks[id];
-			callbacks[id] = null;
-			if (cb) cb(error,result);
+			delete callbacks[id];
+			if (cb.callback) cb.callback(error,result);
 		};
 
 		var registerSelfie = function(name,f) {
@@ -441,7 +452,7 @@
 
 		var Selfie = function(worker,name,callback) {
 			var id = getId();
-			registerCallback(id,callback);
+			registerCallback(id,worker,callback);
 			send(worker,{
 				id: id,
 				command: "selfie",
@@ -453,8 +464,7 @@
 
 		var Unselfie = function(worker,name,callback) {
 			var id = getId();
-			registerCallback(id,callback);
-
+			registerCallback(id,worker,callback);
 			send(worker,{
 				id: id,
 				command: "unselfie",
@@ -466,7 +476,7 @@
 
 		var Install = function(worker,name,functn,callback) {
 			var id = getId();
-			registerCallback(id,callback);
+			registerCallback(id,worker,callback);
 			send(worker,{
 				id: id,
 				command: "install",
@@ -479,7 +489,7 @@
 
 		var Uninstall = function(worker,name,callback) {
 			var id = getId();
-			registerCallback(id,callback);
+			registerCallback(id,worker,callback);
 			send(worker,{
 				id: id,
 				command: "uninstall",
@@ -491,7 +501,7 @@
 
 		var Execute = function(worker,name,args,callback) {
 			var id = getId();
-			registerCallback(id,callback);
+			registerCallback(id,worker,callback);
 			send(worker,{
 				id: id,
 				command: "execute",
@@ -504,7 +514,7 @@
 
 		var Status = function(worker,callback) {
 			var id = getId();
-			registerCallback(id,callback);
+			registerCallback(id,worker,callback);
 			send(worker,{
 				id: id,
 				command: "status"
@@ -513,7 +523,7 @@
 
 		var Close = function(worker,callback) {
 			var id = getId();
-			registerCallback(id,callback);
+			registerCallback(id,worker,callback);
 			send(worker,{
 				id: id,
 				command: "close"
@@ -581,6 +591,9 @@
 						var result = data.result || null;
 						executeCallback(id,error,result);
 					}
+
+					// console.log(me.outstanding()+" / "+(((me.utilization()*10000)|0)/100)+"%");
+
 				});
 	
 				each(keys(selfies),function(key,i){
@@ -595,6 +608,16 @@
 				if (!worker) return;
 
 				Close(worker);
+			};
+
+			var busy = function(worker) {
+				if (!worker) return false;
+				var busy = false;
+				each(keys(callbacks),function(id){
+					if (busy) return;
+					if (callbacks[id].worker===worker) busy = true;
+				});
+				return busy;				
 			};
 
 			for (var i=0;i<options.threads;i++) addThread();
@@ -615,6 +638,18 @@
 
 			this.getThreadPoolSize = function() {
 				return options.threads;
+			};
+
+			this.outstanding = function() {
+				var pending = 0;
+				each(keys(callbacks),function(id){
+					if (indexOf(workers,callbacks[id].worker)>-1) pending += 1;
+				});
+				return pending;				
+			};
+
+			this.utilization = function() {
+				return this.outstanding()/options.threads;
 			};
 
 			this.install = function(name,functn,callback) {
@@ -657,7 +692,11 @@
 				return me;
 			};			
 
-			this.list = function(callback) {
+			this.installed = function(name) {
+				return !!installed[name];
+			};
+
+			this.list = function(callback) {val,
 				callback(null,keys(installed));
 				return me;
 			};
@@ -684,17 +723,58 @@
 				return me;
 			};
 
+			this.distribute = function(name,iterable,resolver,callback) {
+				if (!me.installed(name)) throw new Error("Function "+name+" is not installed in the pool.");
+
+				var iteration = 0;
+				var done = false;
+				var using = [];
+
+				var next = function() {
+					if (!done) {
+						each(workers,function(worker,i){
+							if (busy(worker)) return;
+							using[i] = true;
+							exec(worker);
+						});
+					}
+					else {
+						for (var i=0;i<using.length;i++) {
+							if (using[i] && busy(workers[i])) return;
+						}
+						if (callback) callback(null,iteration);
+					}
+				};
+
+				var exec = function(worker) {
+					if (busy(worker)) return;
+					var val = iterable(++iteration);
+					if (val===undefined || val===null) done = true;
+					if (!done) Execute(worker,name,[val],function(error,result){
+						if (resolver) resolver(error,result,val);
+						next();
+					});
+				};
+
+				next();
+				
+			};
+
 			this.status = function(callback) {
 				var answers = [];
 				each(workers,function(w,i){
 					var start = new Date().getTime();
 					Status(w,function(error,result){
+						result.state = busy(w) ? "busy" : "free";
+
 						answers[i] = result;
+						
 						var alldone = true;
 						each(workers,function(w,j){
 							if (!alldone) return;
 							if (answers[j]===undefined) alldone = false;
 						});
+						
 						if (callback && alldone) {
 							var stats = {
 								poolSize: options.threads,

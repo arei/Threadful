@@ -25,14 +25,39 @@ Threadful attempts to shave millis off the performance costs whereever possible.
 On average we have seen the following performance... Your own results may vary.
 
 ```
-Require Threadful (on Node) ........ 4 ms.
-Creating a Thread .................. 8 ms.
-Install a Function ................. 74 ms.
-Execute an Installed Function ...... 3 ms.
-Execute an Uninstalled Function .... 78 ms.
-Threadify a Function ............... 74 ms.
-Execute a Threadified Function ..... 3 ms.
+Require Threadful (on Node) ................... 4 ms.
+Creating a Thread ............................. 8 ms.
+Install a Function ............................ 74 ms.
+Execute an Installed Function ................. 3 ms.
+Execute a not previously installed Function ... 78 ms.
+Threadify a Function .......................... 74 ms.
+Execute a Threadified Function ................ 3 ms.
 ```
+
+Given these numbers and other test, one should carefully weigh whether executing in a thread is necessary or not.  Thread code that takes a long time to perform, generally does better in a thread than that which is quickly but often performed.  Large calculations perform much better than small things, quality over quantity.  
+
+In our example code, we wrote a very simplistic prime number test and then let it run for 10 seconds.  We compared running in the main thread to distributing the work across a large number of threads.  Here are the results we saw...
+
+```
+Thread          Number of    Small Primes     Large Primes 
+Model           Threads      Found in 10s     Found in 10s
+Used            (incl Main)  >1000            >10000000
+--------------  -----------  ---------------  ---------------
+Single Thread   1+0          23967 / ---       340 / ----
+Multi Thread    1+1          11787 / 49%       314 /  92%
+Multi Thread    1+2          16556 / 69%       635 / 187%
+Multi Thread    1+4          20080 / 84%      1065 / 313%
+Multi Thread    1+6          19238 / 80%      1230 / 362%
+Multi Thread    1+8          17585 / 73%      1311 / 386%
+Multi Thread    1+12         14683 / 61%      1305 / 384%
+Multi Thread    1+16         12556 / 52%      1293 / 380%
+Multi Thread    1+24          8585 / 36%      1263 / 371%
+Multi Thread    1+48          3717 / 16%      1122 / 330%
+
+(Test run on a 4 core intel chip with HyperThreading)
+```
+
+Our results indicate that when working with small primes, using threads was detrimental because the small primes are so quickly calculated individually.  However, when we switched to large primes we saw immediate benefit from using thread because large prime calculations take more time individually.  Our results also illustrate the diminishing return point of exceeding the number of "cores" available.
 
 Installation
 ------------
@@ -149,7 +174,11 @@ Threadful.CloseAll();
 
 #### `ThreadPool.uninstall(name,callback)`
 
+#### `ThreadPool.installed(name)`
+
 #### `ThreadPool.execute(name,arg,arg,arg,etc,callback)`
+
+#### `ThreadPool.distribute(name,iterable,resolver,callback)`
 
 #### `ThreadPool.list()`
 
@@ -165,3 +194,6 @@ Threadful.CloseAll();
 
 #### `ThreadPool.getThreadPoolSize()`
 
+#### `ThreadPool.outstanding()`
+
+#### `ThreadPool.utilization()`

@@ -17,7 +17,9 @@ var threadified;
 
 (function(){
 	var start = new Date().getTime();
-	thread = new Threadful.Thread();
+	thread = new Threadful.ThreadPool({
+		threads: 4
+	});
 	console.log("Creating Thread ....... "+(new Date().getTime()-start)+" ms.");
 })();
 

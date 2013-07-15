@@ -41,7 +41,7 @@ In our example code, we wrote a very simplistic prime number test and then let i
 ```
 Thread          Number of    Small Primes     Large Primes 
 Model           Threads      Found in 10s     Found in 10s
-Used            (incl Main)  >1000            >10000000
+Used            (incl Main)  >0               >10000000
 --------------  -----------  ---------------  ---------------
 Single Thread   1+0          23967 / ---       340 / ----
 Multi Thread    1+1          11787 / 49%       314 /  92%

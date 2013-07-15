@@ -141,7 +141,7 @@
 
 		var installed = {};
 		var stats = {
-			successfulResult: 0,
+			successfulResults: 0,
 			unsuccessfulResults: 0,
 			totalTime: 0,
 			activeTime: 0,
@@ -174,7 +174,9 @@
 				return top.removeEventListener(event,listener);
 			};
 			close = function() {
-				top.close();
+				setTimeout(function(){
+					top.close();
+				},1);
 			};
 			payload = function(event) {
 				return event.data;
@@ -191,7 +193,9 @@
 				return process.removeListener(event,listener);
 			};
 			close = function() {
-				process.exit();
+				setTimeout(function(){
+					process.exit();
+				},1);
 			};
 			payload = function(event) {
 				return event;
@@ -209,7 +213,7 @@
 		};
 
 		var respondResult = function(id,result) {
-			stats.successfulResult += 1;
+			stats.successfulResults += 1;
 			send({
 				id: id,
 				error: null,
@@ -351,7 +355,7 @@
 					stats.averageTime = stats.activeTime/(++count);
 				}
 				catch (ex) {
-					throw ex;
+					// do nothing, the exception should already have been handled.
 				}
 			}
 			else {
@@ -587,9 +591,7 @@
 						executeSelfie(command,args);
 					}
 					else {
-						var error = data.error || null;
-						var result = data.result || null;
-						executeCallback(id,error,result);
+						executeCallback(id,data.error,data.result);
 					}
 
 					// console.log(me.outstanding()+" / "+(((me.utilization()*10000)|0)/100)+"%");
@@ -633,7 +635,7 @@
 				x = x|0 || 1;
 				if (x<1) return;
 				for (var i=0;i<x;i++) removeThread();
-				options.threads += x;
+				options.threads -= x;
 			};
 
 			this.getThreadPoolSize = function() {
@@ -696,7 +698,7 @@
 				return !!installed[name];
 			};
 
-			this.list = function(callback) {val,
+			this.list = function(callback) {
 				callback(null,keys(installed));
 				return me;
 			};
@@ -723,41 +725,106 @@
 				return me;
 			};
 
+			var iteration = function(iterable,i) {
+				if (isFunction(iterable)) return iterable(i);
+				else if (iterable.length!==undefined && iterable.length!==null) return iterable[i];
+				return undefined;
+			};
+
 			this.distribute = function(name,iterable,resolver,callback) {
 				if (!me.installed(name)) throw new Error("Function "+name+" is not installed in the pool.");
+				if (!iterable) throw new Error("Iterable must be an interable object or a function.");
+				if (resolver && !isFunction(resolver)) throw new Error("Resolver must be null or a function.");
 
-				var iteration = 0;
+				var pos = 0;
 				var done = false;
 				var using = [];
+				var results = [];
 
 				var next = function() {
-					if (!done) {
-						each(workers,function(worker,i){
-							if (busy(worker)) return;
-							using[i] = true;
-							exec(worker);
-						});
-					}
-					else {
-						for (var i=0;i<using.length;i++) {
-							if (using[i] && busy(workers[i])) return;
-						}
-						if (callback) callback(null,iteration);
-					}
+					if (done) return;
+
+					each(workers,function(worker,i){
+						if (busy(worker)) return;
+						using[i] = true;
+						exec(worker);
+					});
+					setTimeout(next,0);
 				};
 
 				var exec = function(worker) {
-					if (busy(worker)) return;
-					var val = iterable(++iteration);
+					var i = pos++;
+					var val = iteration(iterable,i);
 					if (val===undefined || val===null) done = true;
-					if (!done) Execute(worker,name,[val],function(error,result){
-						if (resolver) resolver(error,result,val);
-						next();
+					if (!done) {
+						Execute(worker,name,[val],function(error,result){
+							if (resolver) resolver(error,result,val,i);
+							results[i] = error || result;
+							next();
+						});
+					}
+					else {
+						finish();
+					} 
+				};
+
+				var finish = function(){
+					if (!done) return;
+
+					var exit = true;
+					each(workers,function(worker,i){
+						if (!exit) return;
+						if (using[i] && busy(worker)) exit = false;
 					});
+
+					if (exit) callback(null,results);
+					else setTimeout(finish,0);
 				};
 
 				next();
-				
+			};
+
+			this.map = this.distribute;
+
+			this.some = function(name,iterable,callback) {
+				var answer = false;
+				this.distribute(name,function(i){
+					if (answer!==true) return iteration(iterable,i);
+					return undefined;
+				},function(error,result){
+					if (error || result===true) {
+						answer = true;
+						return true;
+					}
+					return false;
+				},function(error,result){
+					callback(error,answer);
+				});
+			};
+
+			this.every = function(name,iterable,callback) {
+				var answer = true;
+				this.distribute(name,function(i){
+					if (answer!==false) return iteration(iterable,i);
+					return undefined;
+				},function(error,result,val,i){
+					if (error || result===false) {
+						answer = false;
+						return false;
+					}
+					return true;
+				},function(error,result){
+					callback(error,answer);
+				});
+			};
+
+			this.filter = function(name,iterable,callback) {
+				var answer = [];
+				this.distribute(name,iterable,function(error,result,val,i){
+					if (!error && result===true) answer.push(val);
+				},function(error,result){
+					callback(error,answer);
+				});
 			};
 
 			this.status = function(callback) {
@@ -787,7 +854,7 @@
 							});
 							callback(null,stats);
 						}
-						else if (callback && options.timeout>-1 && start-new Date().getTime()>options.timeout) callback("Close timed out.",null);
+						else if (callback && options.timeout>-1 && start-new Date().getTime()>options.timeout) callback("Status timed out.",null);
 					});				
 				});
 			};
@@ -807,6 +874,7 @@
 						else if (callback && options.timeout>-1 && start-new Date().getTime()>options.timeout) callback("Close timed out.",false);
 					});				
 				});
+				options.threads = 0;
 				return me;
 			};
 
@@ -839,11 +907,20 @@
 			return this;
 		};
 
-		var CloseAll = function() {
-			each(pools,function(pool){
-				pool.close();
+		var CloseAll = function(callback) {
+			var alldone = function() {
+				for (var j=0;j<pools.length;j++) {
+					if (pools[j]!==null) return false;
+				}
+				return true;
+			};
+
+			each(pools,function(pool,i){
+				pool.close(function(error,result){
+					pools[i] = null;
+					if (alldone()) callback(null,null);
+				});
 			});
-			pools = [];
 		};
 
 		var SoloThreadify = function(f) {
@@ -878,8 +955,6 @@
 		var Threadful = {
 			Thread: Thread,
 			ThreadPool: ThreadPool,
-			Worker: Thread,
-			WorkerPool: ThreadPool,
 			Threadify: SoloThreadify,
 			Execute: SoloExecute,
 			CloseAll: CloseAll

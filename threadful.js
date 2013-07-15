@@ -6,7 +6,7 @@
 	
 	if (!isBrowser && !isNode) throw new Error("Unable to understand execution context, neither Browser nor Node.");
 
-	var threadfulName = "Threadful.js";
+	var threadfulName = "threadful.js";
 	var threadfulPath = threadfulName;
 	
 	var oneup = 1;

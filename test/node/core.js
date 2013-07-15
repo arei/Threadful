@@ -1,7 +1,7 @@
 var assert = require("assert");
 
 // Test Threadful itself
-var Threadful = require("./../../Threadful.js");
+var Threadful = require("./../../threadful.js");
 assert(!!Threadful);
 assert(!!Threadful.Thread);
 assert(!!Threadful.ThreadPool);

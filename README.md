@@ -64,7 +64,7 @@ Installation
 
 You can get Threadful from npm using the command
 ```
-npm install Threadful
+npm install threadful
 ```
 
 Once obtained you can use Threadful in your own code thus
@@ -72,13 +72,13 @@ Once obtained you can use Threadful in your own code thus
 Node.js - via require
 ```javascript
 // Require Threadful
-var Threadful = require("Threadful");
+var Threadful = require("threadful");
 ```
 
 Browser - Insert a script tag
 ```html
 <!-- Install Threadful -->
-<script src="Threadful.js"></script>
+<script src="threadful.js"></script>
 ```
 
 Please Note: Installing Threadful in a browser create the global object Threadful.

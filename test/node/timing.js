@@ -11,7 +11,7 @@ var threadified;
 
 (function(){
 	var start = new Date().getTime();
-	Threadful = require("./../../Threadful.js");
+	Threadful = require("./../../threadful.js");
 	console.log("Requiring ............. "+(new Date().getTime()-start)+" ms.");
 })();
 

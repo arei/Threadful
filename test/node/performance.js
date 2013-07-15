@@ -1,4 +1,4 @@
-var Threadful = require("./../../Threadful.js");
+var Threadful = require("./../../threadful.js");
 var pool = new Threadful.ThreadPool({
 	threads: 1
 });

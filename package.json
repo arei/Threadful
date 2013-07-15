@@ -1,0 +1,28 @@
+{
+  "author": "Glen R. Goodwin (http://www.arei.net)",
+  "name": "Threadful",
+  "keywords": [ "Threadful","Thread","Worker","Workers","Process","Child Process","Web Worker","Threads","Threading","Threaded","Multi-Thread","Multi-Threading","Multi-Threading" ],
+  "description": "Common 'Thread' behavior for Browsers (using Web Workers) or Node (using Child Process).",
+  "version": "0.0.1",
+  "homepage": "http://github.com/arei/Threadful",
+  "bugs": {
+        "url": "http://github.com/arei/Threadful/issues"
+  },
+  "licenses": [
+    {
+      "type": "MIT",
+      "url": "http://github.com/arei/Threadful/blob/master/LICENSE.txt"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/arei/Threadful.git"
+  },
+  "main": "Threadful.js",
+  "engines": {
+    "node": ">=0.10.0"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "optionalDependencies": {}
+}

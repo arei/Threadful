@@ -170,6 +170,8 @@ Threadful.CloseAll();
 `ThreadPool`
 ------------
 
+Once a Thread or ThreadPool is instantiated with `new Thread()` or `new ThreadPool()`, you can perform the following operations on either.
+
 #### `ThreadPool.install(name,f,callback)`
 
 #### `ThreadPool.uninstall(name,callback)`
@@ -179,6 +181,14 @@ Threadful.CloseAll();
 #### `ThreadPool.execute(name,arg,arg,arg,etc,callback)`
 
 #### `ThreadPool.distribute(name,iterable,resolver,callback)`
+
+#### `ThreadPool.map(name,iterable,resolver,callback)`
+
+#### `ThreadPool.filter(name,iterable,callback)`
+
+#### `ThreadPool.some(name,iterable,callback)`
+
+#### `ThreadPool.every(name,iterable,callback)`
 
 #### `ThreadPool.list()`
 

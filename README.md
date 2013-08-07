@@ -207,3 +207,10 @@ Once a Thread or ThreadPool is instantiated with `new Thread()` or `new ThreadPo
 #### `ThreadPool.outstanding()`
 
 #### `ThreadPool.utilization()`
+
+Troubleshooting
+---------------
+
+#### Firefox: SecurityError: The operation is insecure.
+
+You are most likely connecting to a local (file:) page and getting this error. Firefox, by default, enforces a struct uri policy and Threadful seems to violate that when using local files.  You can override this setting in `about:config` by finding the `security.fileuri.strict_origin_policy` property and seting it to `false`.  Make sure to set this back after you are done.

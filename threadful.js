@@ -455,6 +455,7 @@
 		};
 
 		var Selfie = function(worker,name,callback) {
+			if (!worker) throw new Error("Worker closed or disconnected.");
 			var id = getId();
 			registerCallback(id,worker,callback);
 			send(worker,{
@@ -467,6 +468,7 @@
 		};
 
 		var Unselfie = function(worker,name,callback) {
+			if (!worker) throw new Error("Worker closed or disconnected.");
 			var id = getId();
 			registerCallback(id,worker,callback);
 			send(worker,{
@@ -479,6 +481,7 @@
 		};
 
 		var Install = function(worker,name,functn,callback) {
+			if (!worker) throw new Error("Worker closed or disconnected.");
 			var id = getId();
 			registerCallback(id,worker,callback);
 			send(worker,{
@@ -492,6 +495,7 @@
 		};
 
 		var Uninstall = function(worker,name,callback) {
+			if (!worker) throw new Error("Worker closed or disconnected.");
 			var id = getId();
 			registerCallback(id,worker,callback);
 			send(worker,{
@@ -504,6 +508,7 @@
 		};
 
 		var Execute = function(worker,name,args,callback) {
+			if (!worker) throw new Error("Worker closed or disconnected.");
 			var id = getId();
 			registerCallback(id,worker,callback);
 			send(worker,{
@@ -517,6 +522,7 @@
 		};
 
 		var Status = function(worker,callback) {
+			if (!worker) throw new Error("Worker closed or disconnected.");
 			var id = getId();
 			registerCallback(id,worker,callback);
 			send(worker,{
@@ -526,6 +532,7 @@
 		};
 
 		var Close = function(worker,callback) {
+			if (!worker) throw new Error("Worker closed or disconnected.");
 			var id = getId();
 			registerCallback(id,worker,callback);
 			send(worker,{
@@ -644,6 +651,7 @@
 
 			this.outstanding = function() {
 				var pending = 0;
+				if (!workers) return 0;
 				each(keys(callbacks),function(id){
 					if (indexOf(workers,callbacks[id].worker)>-1) pending += 1;
 				});
@@ -655,6 +663,8 @@
 			};
 
 			this.install = function(name,functn,callback) {
+				if (!workers) throw new Error("ThreadPool has been closed.");
+
 				installed[name] = functn;
 
 				var done = [];
@@ -675,6 +685,8 @@
 			};
 
 			this.uninstall = function(name,callback) {
+				if (!workers) throw new Error("ThreadPool has been closed.");
+
 				delete installed[name];
 
 				var done = [];
@@ -699,11 +711,15 @@
 			};
 
 			this.list = function(callback) {
+				if (!workers) throw new Error("ThreadPool has been closed.");
+
 				callback(null,keys(installed));
 				return me;
 			};
 
 			this.execute = function(name,arg,arg,etc,callback) {
+				if (!workers) throw new Error("ThreadPool has been closed.");
+
 				if (!installed[name]) throw new Error("Nothing installed as '"+name+"' in ThreadPool.");
 
 				var a = toArray(arguments);
@@ -732,6 +748,7 @@
 			};
 
 			this.distribute = function(name,iterable,resolver,callback) {
+				if (!workers) throw new Error("ThreadPool has been closed.");
 				if (!me.installed(name)) throw new Error("Function "+name+" is not installed in the pool.");
 				if (!iterable) throw new Error("Iterable must be an interable object or a function.");
 				if (resolver && !isFunction(resolver)) throw new Error("Resolver must be null or a function.");
@@ -787,6 +804,8 @@
 			this.map = this.distribute;
 
 			this.some = function(name,iterable,callback) {
+				if (!workers) throw new Error("ThreadPool has been closed.");
+
 				var answer = false;
 				this.distribute(name,function(i){
 					if (answer!==true) return iteration(iterable,i);
@@ -803,6 +822,8 @@
 			};
 
 			this.every = function(name,iterable,callback) {
+				if (!workers) throw new Error("ThreadPool has been closed.");
+
 				var answer = true;
 				this.distribute(name,function(i){
 					if (answer!==false) return iteration(iterable,i);
@@ -819,6 +840,8 @@
 			};
 
 			this.filter = function(name,iterable,callback) {
+				if (!workers) throw new Error("ThreadPool has been closed.");
+
 				var answer = [];
 				this.distribute(name,iterable,function(error,result,val,i){
 					if (!error && result===true) answer.push(val);
@@ -828,6 +851,8 @@
 			};
 
 			this.status = function(callback) {
+				if (!workers) throw new Error("ThreadPool has been closed.");
+
 				var answers = [];
 				each(workers,function(w,i){
 					var start = new Date().getTime();
@@ -860,25 +885,24 @@
 			};
 
 			this.close = function(callback) {
+				if (!workers) throw new Error("ThreadPool has been closed.");
+
 				var done = [];
-				each(workers,function(w,i){
-					var start = new Date().getTime();
-					Close(w,function(){
-						done[i] = true;
-						var alldone = true;
-						each(workers,function(w,j){
-							if (!alldone) return;
-							if (done[j]!==true) alldone = false;
-						});
-						if (callback && alldone) callback(null,true);
-						else if (callback && options.timeout>-1 && start-new Date().getTime()>options.timeout) callback("Close timed out.",false);
-					});				
+				each(workers,function(worker,i){
+					Close(worker);				
+					workers = null;
 				});
 				options.threads = 0;
 				return me;
 			};
 
+			this.closed = function() {
+				return workers===null;
+			};
+
 			this.threadify = function(f) {
+				if (!workers) throw new Error("ThreadPool has been closed.");
+
 				var id = getId();
 				var ready = false;
 
@@ -908,19 +932,11 @@
 		};
 
 		var CloseAll = function(callback) {
-			var alldone = function() {
-				for (var j=0;j<pools.length;j++) {
-					if (pools[j]!==null) return false;
-				}
-				return true;
-			};
-
 			each(pools,function(pool,i){
-				pool.close(function(error,result){
-					pools[i] = null;
-					if (alldone()) callback(null,null);
-				});
+				if (!pool || pool.closed()) return;
+				pool.close();
 			});
+			if (callback) callback(null,true);
 		};
 
 		var SoloThreadify = function(f) {

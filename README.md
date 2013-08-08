@@ -81,7 +81,7 @@ Browser - Insert a script tag
 <script src="threadful.js"></script>
 ```
 
-Please Note: Installing Threadful in a browser create the global object Threadful.
+Please Note: Installing Threadful in a browser creates the global object Threadful.
 
 Callbacks
 ---------
@@ -99,14 +99,14 @@ Threadful.ThreadPool returns a new ThreadPool object.  See below for details.
 
 ```javascript
 var threadpool = new Threadful.ThreadPool({
-	threads: 4,
+  threads: 4,
   timeout: 500
 });
 ````
 
 #### `Threadful.Thread`
 
-You can create a single Thread using the `new Threadful.Thread()` constructor..  Note that creating a single thread is really jsut a wrapper for creating a thread pool with 1 thread and a timeout of500ms.
+You can create a single Thread using the `new Threadful.Thread()` constructor..  Note that creating a single thread is really jsut a wrapper for creating a thread pool with 1 thread and a timeout of 500ms.
 
 Threadful.Thread returns a new ThreadPool object.  See below for details.
 
@@ -172,41 +172,286 @@ Threadful.CloseAll();
 
 Once a Thread or ThreadPool is instantiated with `new Thread()` or `new ThreadPool()`, you can perform the following operations on either.
 
-#### `ThreadPool.install(name,f,callback)`
+#### `ThreadPool install(name,f,callback)`
 
-#### `ThreadPool.uninstall(name,callback)`
+Installs the function `f` with the given `name` onto all Threads in the ThreadPool.  The callback is fired when all threads report back that the function was installed.
 
-#### `ThreadPool.installed(name)`
+```javascript
+// Create a Threadpool
+var threadpool = new Threadful.ThreadPool({
+  threads: 4,
+  timeout: 500
+});
 
-#### `ThreadPool.execute(name,arg,arg,arg,etc,callback)`
+// Create some function
+var f = function(a,b,c) { ... };
 
-#### `ThreadPool.distribute(name,iterable,resolver,callback)`
+// Install the function to all threads as "someFunction"
+threadpool.install("someFunction",f,callback);
 
-#### `ThreadPool.map(name,iterable,resolver,callback)`
+// Execute "someFunction"
+threadpool.execute("someFunction",1,2,3,callback);
+```
 
-#### `ThreadPool.filter(name,iterable,callback)`
+Please note that as stated above installation of a function is done for each thread in the ThreadPool.  Thus if the ThreadPool has 4 threads, each will install the function to it. This allow `execute` to use a non-busy thread (or the last unused thread) when run.
 
-#### `ThreadPool.some(name,iterable,callback)`
+#### `ThreadPool uninstall(name,callback)`
 
-#### `ThreadPool.every(name,iterable,callback)`
+Uninstalls the named function `name` from all threads in the ThreadPool.  The callback is fired when all threads report back that the function was uninstalled.
 
-#### `ThreadPool.list()`
+```javascript
+// Uninstall the function "someFunction" on all threads 
+threadpool.uninstall("someFunction",callback);
+```
 
-#### `ThreadPool.status()`
+#### `ThreadPool installed(name)`
 
-#### `ThreadPool.close()`
+Returns true if the named function is installed or not.  This is a syncronous call that returns immediately.
 
-#### `ThreadPool.threadify(f)`
+```javascript
+threadpool.installed("someFunction"); // true if intstalled
+```
 
-#### `ThreadPool.increaseThreadPoolSizeBy(int)`
+#### `ThreadPool execute(name,arg,arg,arg,etc,callback)`
 
-#### `ThreadPool.decreaseThreadPoolSizeBy(int)`
+Executes the named function `name` on the first available thread in the ThreadPool. `execute` can take zero or more arguments that are passed to the thread for execution.  THe last argument should be the callback to fire with the result.
 
-#### `ThreadPool.getThreadPoolSize()`
+It should be noted that only basic types can be used as arguments to execute.  The following types are allowed: undefined, null, number, string, date, regexp, object (so long as all members also conform to these types), array (so long as all members also conform to these types).  Notably XML, Elements, Window, Global, and Document cannot be used as arguments.
 
-#### `ThreadPool.outstanding()`
+```javascript
+// Execute "someFunction"
+threadpool.execute("someFunction",1,2,3,callback);
+```
 
-#### `ThreadPool.utilization()`
+Execute will run callback when the execute function has finished executing on the thread. 
+
+#### `ThreadPool threadify(f)`
+
+Given some function `f` return a new function that when run executes the given function `f` on a thread.  Threadify is a wrapper for installing and executing the function f without supplying a name and returning a function that handles all the executiong function.  Consider...
+
+```javascript
+// Create a Threadpool
+var threadpool = new Threadful.ThreadPool({
+  threads: 4,
+  timeout: 500
+});
+
+// Create some function
+var f = function(a,b,c) { ... };
+
+// Install the function to all threads as "someFunction"
+threadpool.install("someFunction",f,callback);
+
+// Execute "someFunction"
+threadpool.execute("someFunction",1,2,3,callback);
+```
+
+`"someFunction"` can be executed as shown above without to much trouble.  Threadify on the other hand, cleans up some of these implementation details.  Consider this...
+
+```javascript
+// Create a Threadpool
+var threadpool = new Threadful.ThreadPool({
+  threads: 4,
+  timeout: 500
+});
+
+// Create some function
+var f = function(a,b,c) { ... };
+
+// Threadify f
+var g = threadpool.threadify(f);
+
+// Execute f on a thread.
+g(1,2,3,callback)
+```
+
+In the second example, `g` has wrapped all the execution details of executing `f` on a threadpool thread.
+
+Threadify functions can take any number of arguments, so long as the last argument is the callback function to run when execution is complete.
+
+#### `ThreadPool distribute(name,iterable,resolver,callback)`
+
+Distribute spreads the execution of the installed function `name` for some `iterable` across all threads in the pool.  Results from all executions are than resolved into a final result, which is passed to the callback when complete. An `interable` can be an array of values, or it can be a function that when executed returns the next value in the iteration or `undefined` when the iteration is complete.
+
+If the `interable` is a function, it gets one parameters, the index count of this iteration which starts from 0 and increments with each execution of iterable.
+
+`distribute`, `map`, `filter`, `some`, and `every` will use all the non-busy threads in a ThreadPool as often as necessary to complete its task.
+
+```javascript```
+// create an array
+var someArray = [1,2,3,4,etc];
+
+// execute "someFunction" for each value in "someArray"
+threadpool.distribute("someFunction",someArray,null,callback);
+
+// OR
+
+// Create an iterable function
+var next = function(i) {
+	return i*100;
+};
+
+// execute "someFunction" for each next() that is not undefined
+threadpool.distribute("someFunction",next,resolve,callback);
+```
+
+The resolver function, if any, is executed once for each result back on the main thread.  The resolver function gets the following arguments resolver(error,result,originalValue,index).  `error` is any error returned from executing the function `name` on the thread.  `result` is the result returned if no error occured.  `originalValue` is the original value passed to the thread for execution. `index` is the index used with the iterable.  The resolver does not need to return a value.
+
+The callback of distribute will return an error if any error occured during execution, or an array of results, one for each iteration run.
+
+#### `ThreadPool map(name,iterable,resolver,callback)`
+
+Map is used to transform one `iterable` into a new array.  It is functionally equivelent to `Array.map` except for it usage of Threads for the execution of the closure function.
+
+If the `interable` is a function, it gets one parameters, the index count of this iteration which starts from 0 and increments with each execution of iterable.
+
+`distribute`, `map`, `filter`, `some`, and `every` will use all the non-busy threads in a ThreadPool as often as necessary to complete its task.
+
+```javascript```
+// create an array
+var someArray = [1,2,3,4,etc];
+
+// execute "someFunction" for each cell of someArray
+threadpool.map("someFunction",someArray,resolve,callback);
+```
+
+The resolver function, if any, is executed once for each result back on the main thread.  The resolver function gets the following arguments resolver(error,result,originalValue,index).  `error` is any error returned from executing the function `name` on the thread.  `result` is the result returned if no error occured.  `originalValue` is the original value passed to the thread for execution. `index` is the index used with the iterable.  The resolver does not need to return a value.
+
+The callback of distribute will return an error if any error occured during execution, or an array of results, one for each iteration run.
+
+#### `ThreadPool filter(name,iterable,callback)`
+
+Filter reduces an `iterable` into a new smaller array.  For each execution of `name` if the value returned is true, the value is placed into the results array returned to `callback`.  Filter is functionally equivelent to `Array.filter` except for it usage of Threads for the execution of the closure function.
+
+If the `interable` is a function, it gets one parameters, the index count of this iteration which starts from 0 and increments with each execution of iterable.
+
+`distribute`, `map`, `filter`, `some`, and `every` will use all the non-busy threads in a ThreadPool as often as necessary to complete its task.
+
+```javascript```
+// create an array
+var someArray = [1,2,3,4,etc];
+
+// execute "someFunction" for each cell of someArray
+threadpool.filter("someFunction",someArray,callback);
+```
+
+The callback of distribute will return an error if any error occured during execution, or an array of results.
+
+#### `ThreadPool some(name,iterable,callback)`
+
+Some iterates an `iterable` until the executing of the function `name` returns true, at which point the value of `true` is passed to the `callback. If the `iterable` ends without a value of `true` being called, the value of `false` is sent to the `callback`.  Some is functionally equivelent to `Array.some` except for it usage of Threads for the execution of the closure function.
+
+If the `interable` is a function, it gets one parameters, the index count of this iteration which starts from 0 and increments with each execution of iterable.
+
+`distribute`, `map`, `filter`, `some`, and `every` will use all the non-busy threads in a ThreadPool as often as necessary to complete its task.
+
+```javascript```
+// create an array
+var someArray = [1,2,3,4,etc];
+
+// execute "someFunction" for each cell of someArray
+threadpool.some("someFunction",someArray,callback);
+```
+
+The callback of distribute will return an error if any error occured during execution, true if any execution of `name` returns true, or false otherwise.
+
+#### `ThreadPool every(name,iterable,callback)`
+
+Every iterates an `iterable` until the executing of the function `name` return false, at which point the value of `faklse` is passed to the `callback. If the `iterable` ends without a value of `false` being called, the value of `true` is sent to the `callback`.  Some is functionally equivelent to `Array.every` except for it usage of Threads for the execution of the closure function.
+
+If the `interable` is a function, it gets one parameters, the index count of this iteration which starts from 0 and increments with each execution of iterable.
+
+`distribute`, `map`, `filter`, `some`, and `every` will use all the non-busy threads in a ThreadPool as often as necessary to complete its task.
+
+```javascript```
+// create an array
+var someArray = [1,2,3,4,etc];
+
+// execute "someFunction" for each cell of someArray
+threadpool.every("someFunction",someArray,callback);
+```
+
+The callback of distribute will return an error if any error occured during execution, true if every execution of `name` returns true, or false otherwise.
+
+#### `ThreadPool list()`
+
+Returns a list of all installed function names.  This returns immediately.
+
+#### `ThreadPool status(callback)`
+
+Returns an object containing status details for the ThreadPool and each Thread in the pool. The status object has the following structure:
+
+```javascript
+var status = {
+	poolSize: number,    // number of threads in this pool
+	options: object,     // An object containing the current ThreadPool options in use
+	installed: array,    // An array (of strings) of all installed function names
+	threads: object,     // An object with detailed status for each thread.
+};
+```
+
+`status.threads` will have one thread status object for each thread, keyed by thread index number.  A thread status object looks like this:
+```javascript
+var threadStatus = {
+	successfulResults: number,       // Number of thread calls (Install, execute, uninstall, etc) that returned successfully. 
+	unsuccessfulResults: number,     // Number of thread calls (Install, execute, uninstall, etc) that returned unsuccessfully. 
+	totalTime: number,               // Total amount of time (in millis) that the thread has been running (rough estimate).
+	activeTime: number,              // Total amount of time (in millis) that the thread has been performing a Threadful task.
+	averageTime: number,             // Average amount of time (in millis) per Threadful task performed.
+	lastTime: number,                // Amount of time (in millis) spent in the last Threadful task.
+	lastCall: string,                // Name of the last Threadful task.
+	selfies: number,                 // Number of Selfies performed.
+	executes: number,                // Number of Executes performed. (Include Threadify, distribute, map, etc)
+	installs: number,                // Number of installs performed. (Include Threadify, distribute, map, etc)
+	uninstalls: number               // Number of uninstalls performed.
+};
+```
+
+#### `ThreadPool close(callback)`
+
+Closes the ThreadPool and fires the callback when complete.
+
+Please note that once a ThreadPool is closed, it cannot be used further.
+
+#### `ThreadPool getThreadPoolSize()`
+
+Returns the number of threads in the thread pool.
+
+#### `ThreadPool outstanding()`
+
+Returns the number of threads currently busy.
+
+#### `ThreadPool utilization()`
+
+Returns a number between 1 and 0 representing the percentage of the ThreadPool that is busy.
+
+Using Console in Threads
+------------------------
+
+One of the features that Threadful does for you is that it will allow you to use `console.log`, `console.info`, `console.warn`, and `console.error` in each Thread created by it. Any call to one of these console commands, will bundle the console message up and send it back to the main thread for writing.
+
+```javascript
+// Create a Threadpool
+var threadpool = new Threadful.ThreadPool({
+  threads: 4,
+  timeout: 500
+});
+
+// Create some function
+var f = function(a,b,c) { 
+	console.log(a);
+	console.log(b);
+	console.log(c);
+};
+
+// Install the function to all threads as "someFunction"
+threadpool.install("someFunction",f,callback);
+
+// Execute "someFunction"
+threadpool.execute("someFunction",1,2,3,callback);
+```
+
+In the above example, even though function `f` is actually run in a thread, the `console.log` commands are executed back on the main thread.
 
 Troubleshooting
 ---------------

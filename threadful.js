@@ -631,20 +631,6 @@
 
 			for (var i=0;i<options.threads;i++) addThread();
 
-			this.increaseThreadPoolSizeBy = function(x) {
-				x = x|0 || 1;
-				if (x<1) return;
-				for (var i=0;i<x;i++) addThread();
-				options.threads += x;
-			};
-
-			this.decreaseThreadPoolSizeBy = function(x) {
-				x = x|0 || 1;
-				if (x<1) return;
-				for (var i=0;i<x;i++) removeThread();
-				options.threads -= x;
-			};
-
 			this.getThreadPoolSize = function() {
 				return options.threads;
 			};
